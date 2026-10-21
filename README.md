@@ -1,7 +1,7 @@
 # mig-scaler
 
-Autoscaler for GitHub Actions runner scale sets on a regional GCP managed
-instance group. Built on `github.com/actions/scaleset` v0.4.0.
+Autoscaler for GitHub Actions runner scale sets on a GCP managed
+instance group. Built on top of `github.com/actions/scaleset`.
 
 One runner is one VM. The scaler registers each runner on GitHub (JIT) and
 creates its VM with the single-use config in the `jit-config` metadata key.
@@ -97,14 +97,6 @@ Fields: `name`, `url`, `scale_set`, `labels`, `runner_group`, `project`,
 `max_runner_age`, and the credential overrides `app_installation_id` and
 `github_token_env` (name of an env var holding a PAT for this instance).
 Credentials are otherwise shared, from the usual flags.
-
-The scaler refuses to start when two instances have the same name, the same
-scale set, or the same MIG and runner prefix. Without `--config`, the flags
-describe a single instance named after the scale set, as before.
-
-On Cloud Run, mount the file from Secret Manager:
-`--set-secrets /etc/mig-scaler/config.toml=mig-scaler-config:latest` and
-`MIG_SCALER_CONFIG=/etc/mig-scaler/config.toml`.
 
 ## Labels
 
