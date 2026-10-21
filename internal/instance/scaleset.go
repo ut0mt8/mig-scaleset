@@ -1,4 +1,4 @@
-package cmd
+package instance
 
 import (
 	"context"
@@ -14,8 +14,8 @@ import (
 
 // ensureScaleSet returns the scale set of the instance, creating it on
 // first run and updating its labels when they changed.
-func (r *instanceRunner) ensureScaleSet(ctx context.Context, gh *scaleset.Client) (*scaleset.RunnerScaleSet, error) {
-	cfg := r.cfg
+func (r *Runner) ensureScaleSet(ctx context.Context, gh *scaleset.Client) (*scaleset.RunnerScaleSet, error) {
+	cfg := r.Config
 
 	groupID, err := ghclient.RunnerGroupID(ctx, gh, cfg.RunnerGroup)
 	if err != nil {
@@ -46,7 +46,7 @@ func (r *instanceRunner) ensureScaleSet(ctx context.Context, gh *scaleset.Client
 		return existing, nil
 	}
 
-	r.log.Info(
+	r.Log.Info(
 		"updating scale set labels",
 		zap.Strings("from", labelNames(existing.Labels)),
 		zap.Strings("to", labelNames(wanted.Labels)),

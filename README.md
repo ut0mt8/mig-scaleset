@@ -23,7 +23,7 @@ Commit `go.sum`, the Docker build needs it.
 ## GCP setup
 
 1. Instance template: the runner image (`shr-image-*`), the runner
-   service account, and `startup.sh` as `startup-script`.
+   service account, and a `startup-script`.
 2. Regional MIG at size 0, no autoscaler, no autohealing, redistribution off:
 
    ```bash

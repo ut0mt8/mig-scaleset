@@ -54,8 +54,8 @@ func newCommand() *cobra.Command {
 Without --yes it only shows the scale set. It refuses to delete a scale set
 that has jobs or busy runners, unless --force is given. VMs in the MIG are
 not touched, delete them separately.`,
-		Example: `  scaleset-delete --url https://github.com/org-hq --name test
-  scaleset-delete --url https://github.com/org-hq --id 2 --yes`,
+		Example: `  scaleset-delete --url https://github.com/botify-hq --name garm-test
+  scaleset-delete --url https://github.com/botify-hq --id 2 --yes`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {

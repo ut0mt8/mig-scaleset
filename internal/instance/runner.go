@@ -1,4 +1,5 @@
-package cmd
+// Package instance runs one scale set on one MIG, and restarts it when it fails.
+package instance
 
 import (
 	"context"
@@ -27,24 +28,24 @@ const (
 	healthyRun = 10 * time.Minute
 )
 
-// instanceRunner runs one instance: its scale set, session, listener and
-// reconcile loop.
-type instanceRunner struct {
-	cfg     config.Instance
-	auth    ghclient.Auth
-	version string
-	compute *compute.RegionInstanceGroupManagersClient
-	status  *api.Instance
-	log     *zap.Logger
+// Runner runs one instance: its scale set, session, listener and reconcile
+// loop.
+type Runner struct {
+	Config  config.Instance
+	Auth    ghclient.Auth
+	Version string
+	Compute *compute.RegionInstanceGroupManagersClient
+	Status  *api.Instance
+	Log     *zap.Logger
 }
 
-// run keeps the instance going until ctx is done, restarting it with
+// Run keeps the instance going until ctx is done, restarting it with
 // backoff when it fails.
-func (r *instanceRunner) run(ctx context.Context) {
+func (r *Runner) Run(ctx context.Context) {
 	backoff := minBackoff
 
 	for {
-		r.status.Starting()
+		r.Status.Starting()
 		started := time.Now()
 
 		err := r.attempt(ctx)
@@ -58,8 +59,8 @@ func (r *instanceRunner) run(ctx context.Context) {
 			backoff = minBackoff
 		}
 
-		r.status.Failed(err)
-		r.log.Error("instance failed, restarting", zap.Error(err), zap.Duration("in", backoff))
+		r.Status.Failed(err)
+		r.Log.Error("instance failed, restarting", zap.Error(err), zap.Duration("in", backoff))
 
 		select {
 		case <-ctx.Done():
@@ -71,7 +72,7 @@ func (r *instanceRunner) run(ctx context.Context) {
 }
 
 // attempt runs the instance once. Its reconcile loop stops with it.
-func (r *instanceRunner) attempt(ctx context.Context) error {
+func (r *Runner) attempt(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -84,7 +85,7 @@ func (r *instanceRunner) attempt(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	r.log.Info(
+	r.Log.Info(
 		"using scale set",
 		zap.Int("id", scaleSet.ID),
 		zap.String("name", scaleSet.Name),
@@ -93,7 +94,7 @@ func (r *instanceRunner) attempt(ctx context.Context) error {
 
 	gh.SetSystemInfo(scaleset.SystemInfo{
 		System:     "mig-scaler",
-		Version:    r.version,
+		Version:    r.Version,
 		ScaleSetID: scaleSet.ID,
 	})
 
@@ -106,32 +107,32 @@ func (r *instanceRunner) attempt(ctx context.Context) error {
 	if err := s.Reconcile(ctx); err != nil {
 		return fmt.Errorf("initial reconcile: %w", err)
 	}
-	go s.RunReconciler(ctx, r.cfg.ReconcileInterval)
+	go s.RunReconciler(ctx, r.Config.ReconcileInterval)
 
 	return r.listen(ctx, gh, s)
 }
 
-func (r *instanceRunner) newScaler(gh *scaleset.Client, scaleSetID int) (*scaler.Scaler, error) {
+func (r *Runner) newScaler(gh *scaleset.Client, scaleSetID int) (*scaler.Scaler, error) {
 	return scaler.New(scaler.Config{
 		GitHub:      gh,
-		Compute:     r.compute,
+		Compute:     r.Compute,
 		ScaleSetID:  scaleSetID,
-		Project:     r.cfg.Project,
-		Region:      r.cfg.Region,
-		MIG:         r.cfg.MIG,
-		Prefix:      r.cfg.RunnerPrefix,
-		WorkFolder:  r.cfg.WorkFolder,
-		MinRunners:  r.cfg.MinRunners,
-		MaxRunners:  r.cfg.MaxRunners,
-		BootTimeout: r.cfg.BootTimeout,
-		IdleTimeout: r.cfg.IdleTimeout,
-		MaxAge:      r.cfg.MaxRunnerAge,
-		Logger:      r.log.Named("scaler"),
+		Project:     r.Config.Project,
+		Region:      r.Config.Region,
+		MIG:         r.Config.MIG,
+		Prefix:      r.Config.RunnerPrefix,
+		WorkFolder:  r.Config.WorkFolder,
+		MinRunners:  r.Config.MinRunners,
+		MaxRunners:  r.Config.MaxRunners,
+		BootTimeout: r.Config.BootTimeout,
+		IdleTimeout: r.Config.IdleTimeout,
+		MaxAge:      r.Config.MaxRunnerAge,
+		Logger:      r.Log.Named("scaler"),
 	})
 }
 
 // listen opens the GitHub session and handles messages until ctx is done.
-func (r *instanceRunner) listen(ctx context.Context, gh *scaleset.Client, s *scaler.Scaler) error {
+func (r *Runner) listen(ctx context.Context, gh *scaleset.Client, s *scaler.Scaler) error {
 	scaleSetID := s.ScaleSetID()
 
 	hostname, err := os.Hostname()
@@ -146,12 +147,12 @@ func (r *instanceRunner) listen(ctx context.Context, gh *scaleset.Client, s *sca
 	defer session.Close(context.WithoutCancel(ctx)) //nolint:errcheck // best effort on exit
 
 	// The listener logs through slog, send it to zap.
-	listenerLog := slog.New(zapslog.NewHandler(r.log.Core(), zapslog.WithName("listener")))
+	listenerLog := slog.New(zapslog.NewHandler(r.Log.Core(), zapslog.WithName("listener")))
 	l, err := listener.New(
 		session,
 		listener.Config{
 			ScaleSetID: scaleSetID,
-			MaxRunners: r.cfg.MaxRunners,
+			MaxRunners: r.Config.MaxRunners,
 			Logger:     listenerLog,
 		},
 		listener.WithMetricsRecorder(scaler.NewStatsLogger(s)),
@@ -160,25 +161,25 @@ func (r *instanceRunner) listen(ctx context.Context, gh *scaleset.Client, s *sca
 		return fmt.Errorf("creating listener: %w", err)
 	}
 
-	r.status.Running(s)
-	r.log.Info("listening for jobs")
+	r.Status.Running(s)
+	r.Log.Info("listening for jobs")
 	return l.Run(ctx, s)
 }
 
 // githubClient uses the shared credentials, with the instance overrides.
-func (r *instanceRunner) githubClient() (*scaleset.Client, error) {
-	auth := r.auth
+func (r *Runner) githubClient() (*scaleset.Client, error) {
+	auth := r.Auth
 
-	if r.cfg.GitHubTokenEnv != "" {
-		token := os.Getenv(r.cfg.GitHubTokenEnv)
+	if r.Config.GitHubTokenEnv != "" {
+		token := os.Getenv(r.Config.GitHubTokenEnv)
 		if token == "" {
-			return nil, fmt.Errorf("github_token_env: $%s is empty", r.cfg.GitHubTokenEnv)
+			return nil, fmt.Errorf("github_token_env: $%s is empty", r.Config.GitHubTokenEnv)
 		}
 		auth = ghclient.Auth{Token: token}
 	}
-	if r.cfg.AppInstallationID != 0 {
-		auth.AppInstallationID = r.cfg.AppInstallationID
+	if r.Config.AppInstallationID != 0 {
+		auth.AppInstallationID = r.Config.AppInstallationID
 	}
 
-	return auth.New(r.cfg.URL)
+	return auth.New(r.Config.URL)
 }

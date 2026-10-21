@@ -1,4 +1,5 @@
-package cmd
+// Package cli is the mig-scaler command line.
+package cli
 
 import (
 	"context"

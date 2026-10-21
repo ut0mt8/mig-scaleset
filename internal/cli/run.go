@@ -1,4 +1,4 @@
-package cmd
+package cli
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ut0mt8/mig-scaleset/internal/api"
+	"github.com/ut0mt8/mig-scaleset/internal/instance"
 )
 
 func run(ctx context.Context, opts options) error {
@@ -46,15 +47,15 @@ func runInstances(ctx context.Context, opts options, log *zap.Logger) error {
 	}
 	defer migClient.Close() //nolint:errcheck // best effort on exit
 
-	runners := make([]*instanceRunner, 0, len(insts))
+	runners := make([]*instance.Runner, 0, len(insts))
 	for _, inst := range insts {
-		runners = append(runners, &instanceRunner{
-			cfg:     inst,
-			auth:    opts.auth,
-			version: opts.version,
-			compute: migClient,
-			log:     log.With(zap.String("instance", inst.Name)),
-			status: server.Add(api.InstanceInfo{
+		runners = append(runners, &instance.Runner{
+			Config:  inst,
+			Auth:    opts.auth,
+			Version: opts.version,
+			Compute: migClient,
+			Log:     log.With(zap.String("instance", inst.Name)),
+			Status: server.Add(api.InstanceInfo{
 				Name:     inst.Name,
 				URL:      inst.URL,
 				ScaleSet: inst.ScaleSet,
@@ -77,7 +78,7 @@ func runInstances(ctx context.Context, opts options, log *zap.Logger) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			r.run(ctx)
+			r.Run(ctx)
 		}()
 	}
 
