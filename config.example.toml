@@ -1,0 +1,19 @@
+[defaults]
+project = "self-hosted-runners"
+region = "us-central1"
+max_runners = 10
+
+[[instances]]
+name = "default"
+url = "https://github.com/org-hq" # org
+scale_set = "gcp-runners"
+mig = "gh-runners"
+labels = ["linux", "e2-medium"]
+
+[[instances]]
+name = "large"
+url = "https://github.com/org-hq/repo" # a single repo
+scale_set = "gcp-runners-large"
+mig = "gh-large"
+max_runners = 4
+idle_timeout = "15m"

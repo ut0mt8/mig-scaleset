@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mig-scaler</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  color-scheme: light;
+  --paper: #eef2f6;
+  --ink: #15212e;
+  --muted: #5b6b7c;
+  --line: #c9d3dd;
+  --busy: #2457c5;
+  --idle: #2f8f6b;
+  --pending: #b7862a;
+  --error: #b8433a;
+  --slot-empty: #dfe6ed;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --paper: #121a23;
+    --ink: #e3e9ef;
+    --muted: #8e9ba8;
+    --line: #2a3743;
+    --busy: #6e97f0;
+    --idle: #5cc39c;
+    --pending: #e0b45a;
+    --error: #e87a70;
+    --slot-empty: #1c2631;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 15px/1.5 "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+main {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 28px 24px 64px;
+}
+
+header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 24px;
+}
+header h1 { margin: 0; font-size: 22px; font-weight: 800; }
+header p { margin: 0; color: var(--muted); }
+#freshness::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+#freshness.stale::before { background: var(--error); }
+
+nav.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+nav.tabs button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+nav.tabs button:hover { color: var(--ink); }
+nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+nav.tabs button:focus-visible { outline: 2px solid var(--busy); outline-offset: -2px; }
+nav.tabs .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+nav.tabs .count { color: var(--muted); font-weight: 400; }
+#subtitle { margin: 4px 0 0; color: var(--muted); }
+
+#banner {
+  margin: 20px 0 0;
+  padding: 10px 14px;
+  border-left: 4px solid var(--error);
+  background: var(--slot-empty);
+}
+#banner[hidden], nav.tabs[hidden], #content[hidden] { display: none; }
+
+/* The fleet: one slot per possible runner, up to max runners. */
+.fleet { margin-top: 36px; }
+.fleet-numbers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 40px;
+  align-items: baseline;
+}
+.big { margin: 0; font-size: 56px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+@media (max-width: 600px) { .big { font-size: 40px; } }
+.big small { font-size: 17px; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 6px; }
+.slots {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--max, 10), minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 20px;
+  height: 44px;
+}
+.slot { border-radius: 2px; background: var(--slot-empty); }
+.slot.busy { background: var(--busy); }
+.slot.idle { background: var(--idle); }
+.slot.pending {
+  background: repeating-linear-gradient(135deg, var(--pending) 0 6px, transparent 6px 12px);
+  outline: 2px solid var(--pending);
+  outline-offset: -2px;
+}
+.target {
+  position: absolute;
+  top: -8px;
+  bottom: -8px;
+  width: 3px;
+  margin-left: -2px;
+  background: var(--ink);
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  margin-top: 14px;
+  color: var(--muted);
+}
+.legend span::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 2px;
+  background: var(--c);
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 48px;
+  margin-top: 48px;
+}
+@media (max-width: 860px) { .columns { grid-template-columns: 1fr; gap: 36px; } }
+
+h2 { margin: 0 0 12px; font-size: 17px; font-weight: 700; }
+
+dl.facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 20px; margin: 0; }
+dl.facts dt { color: var(--muted); }
+dl.facts dd { margin: 0; }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 8px 12px 8px 0; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 500; color: var(--muted); }
+td.name { font-weight: 500; white-space: nowrap; }
+td.job { min-width: 12ch; }
+.state { white-space: nowrap; }
+.state::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--c);
+}
+.empty { color: var(--muted); padding: 12px 0; }
+
+ol.events { list-style: none; margin: 0; padding: 0; }
+ol.events li {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+}
+ol.events time { color: var(--muted); }
+ol.events .error { color: var(--error); }
+
+section + section { margin-top: 40px; }
+</style>
+</head>
+<body>
+<main>
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Instances"></nav>
+
+  <header>
+    <div>
+      <h1 id="title">mig-scaler</h1>
+      <p id="subtitle"></p>
+    </div>
+    <p id="freshness" class="stale">Connecting…</p>
+  </header>
+
+  <p id="banner" role="alert" hidden></p>
+
+  <div id="content">
+  <section class="fleet" aria-labelledby="fleet-heading">
+    <h2 id="fleet-heading" hidden>Fleet</h2>
+    <div class="fleet-numbers">
+      <p class="big"><span id="waiting">–</span><small>jobs waiting</small></p>
+      <p class="big"><span id="running">–</span><small>jobs running</small></p>
+      <p class="big"><span id="tracked">–</span><small id="tracked-label">runners</small></p>
+    </div>
+    <div class="slots" id="slots" role="img" aria-label="Runner slots"></div>
+    <div class="legend">
+      <span style="--c: var(--busy)" id="legend-busy">Busy</span>
+      <span style="--c: var(--idle)" id="legend-idle">Idle</span>
+      <span style="--c: var(--pending)" id="legend-pending">Starting</span>
+      <span style="--c: var(--ink)" id="legend-target">Target</span>
+    </div>
+  </section>
+
+  <div class="columns">
+    <div>
+      <section aria-labelledby="runners-heading">
+        <h2 id="runners-heading">Runners</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>State</th><th>Job</th><th>Age</th></tr></thead>
+            <tbody id="runners"></tbody>
+          </table>
+        </div>
+        <p class="empty" id="runners-empty" hidden>No runners right now. New ones start when jobs are queued.</p>
+      </section>
+
+      <section aria-labelledby="queue-heading">
+        <h2 id="queue-heading">Job queue on GitHub</h2>
+        <dl class="facts" id="queue"></dl>
+      </section>
+
+      <section aria-labelledby="reconcile-heading">
+        <h2 id="reconcile-heading">Last check of the MIG</h2>
+        <dl class="facts" id="reconcile"></dl>
+      </section>
+    </div>
+
+    <section aria-labelledby="events-heading">
+      <h2 id="events-heading">Activity</h2>
+      <ol class="events" id="events"></ol>
+      <p class="empty" id="events-empty" hidden>Nothing has happened yet.</p>
+    </section>
+  </div>
+  </div>
+</main>
+
+<script>
+const REFRESH_MS = 5000;
+const $ = (id) => document.getElementById(id);
+
+const STATE_LABEL = { busy: "Busy", idle: "Idle", pending: "Starting" };
+const STATE_COLOR = { busy: "var(--busy)", idle: "var(--idle)", pending: "var(--pending)" };
+const EVENT_LABEL = {
+  registered: "Runner registered",
+  deregistered: "Runner removed from GitHub",
+  job_started: "Job started",
+  job_completed: "Job finished",
+  scale_up: "Scaled up",
+  scale_down: "Scaled down",
+  vm_deleted: "VM deleted",
+  adopted: "VM adopted",
+  error: "Error",
+};
+
+let lastSuccess = null;
+let version = "";
+
+function el(tag, text, className) {
+  const node = document.createElement(tag);
+  if (text !== undefined) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+}
+
+function since(iso, now = Date.now()) {
+  if (!iso) return "–";
+  const s = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+function clock(iso) {
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+}
+
+function facts(target, rows) {
+  target.replaceChildren(...rows.flatMap(([k, v]) => [el("dt", k), el("dd", String(v))]));
+}
+
+function githubRunners(gh) {
+  const parts = [`${gh.busy} busy`, `${gh.idle} idle`];
+  if (gh.offline > 0) parts.push(`${gh.offline} offline (booting, or not connecting)`);
+  return `${gh.registered}: ${parts.join(", ")}`;
+}
+
+function renderStatus(st) {
+  const r = st.runners;
+  $("title").textContent = st.instance.name;
+  $("subtitle").textContent = `Scale set ${st.instance.scale_set} on ${st.instance.url}, MIG ${st.mig} in ${st.region}`;
+  document.title = `${st.queue.waiting} waiting, ${st.queue.running} running, ${st.instance.name}`;
+
+  $("waiting").textContent = st.queue.waiting;
+  $("running").textContent = st.queue.running;
+  $("tracked").textContent = r.tracked;
+  $("tracked-label").textContent = `of ${r.max} runners`;
+
+  $("legend-busy").textContent = `Busy ${r.busy}`;
+  $("legend-idle").textContent = `Idle ${r.idle}`;
+  $("legend-pending").textContent = `Starting ${r.pending}`;
+  $("legend-target").textContent = `Target ${r.target}`;
+
+  const slots = $("slots");
+  slots.style.setProperty("--max", Math.max(r.max, 1));
+  const fill = [
+    ...Array(r.busy).fill("busy"),
+    ...Array(r.idle).fill("idle"),
+    ...Array(r.pending).fill("pending"),
+  ];
+  const cells = [];
+  for (let i = 0; i < Math.max(r.max, fill.length); i++) {
+    cells.push(el("div", undefined, `slot ${fill[i] || ""}`));
+  }
+  const marker = el("div", undefined, "target");
+  marker.style.left = `${(r.target / Math.max(r.max, 1)) * 100}%`;
+  cells.push(marker);
+  slots.replaceChildren(...cells);
+  slots.setAttribute("aria-label",
+    `${r.busy} busy, ${r.idle} idle, ${r.pending} starting, target ${r.target} of ${r.max}`);
+
+  facts($("queue"), [
+    ["Waiting for a runner", st.queue.waiting],
+    ["Running", st.queue.running],
+    ["Assigned to this scale set", st.queue.assigned],
+    ["Available, not yet acquired", st.queue.available],
+    ["Acquired", st.queue.acquired],
+    ["Runners GitHub sees", githubRunners(st.github)],
+    ["Last update from GitHub", st.github.updated_at ? `${since(st.github.updated_at)} ago` : "none yet"],
+  ]);
+
+  const p = st.last_reconcile;
+  if (!p) {
+    facts($("reconcile"), [["Status", "Not run yet"]]);
+  } else {
+    const list = (names) => names || [];
+    const deleted = list(p.deleted_dead).length + list(p.deleted_finished).length;
+    facts($("reconcile"), [
+      ["When", `${since(p.at)} ago, took ${p.took_ms} ms`],
+      ["VMs in the MIG", p.vms_in_mig],
+      ["Waiting for their VM", list(p.pending).join(", ") || "none"],
+      ["Adopted", list(p.adopted).length],
+      ["Deleted", deleted],
+      ["Dropped, VM never came", list(p.forgotten).length],
+      ["Other VMs, left alone", list(p.foreign_vms).join(", ") || "none"],
+    ]);
+  }
+}
+
+function renderRunners(runners) {
+  const now = Date.now();
+  const rows = runners.map((rn) => {
+    const tr = el("tr");
+    tr.append(el("td", rn.name, "name"));
+    const state = el("td", STATE_LABEL[rn.state] || rn.state, "state");
+    state.style.setProperty("--c", STATE_COLOR[rn.state] || "var(--muted)");
+    tr.append(state);
+    tr.append(el("td", rn.job ? `${rn.job} (${since(rn.job_started_at, now)})` : "–", "job"));
+    tr.append(el("td", since(rn.created_at, now)));
+    return tr;
+  });
+  $("runners").replaceChildren(...rows);
+  $("runners-empty").hidden = runners.length > 0;
+}
+
+function renderEvents(events) {
+  const items = events.map((ev) => {
+    const li = el("li");
+    const time = el("time", clock(ev.time));
+    time.dateTime = ev.time;
+    const text = [EVENT_LABEL[ev.kind] || ev.kind, ev.runner, ev.detail].filter(Boolean).join(": ");
+    li.append(time, el("span", text, ev.kind === "error" ? "error" : ""));
+    return li;
+  });
+  $("events").replaceChildren(...items);
+  $("events-empty").hidden = events.length > 0;
+}
+
+async function getJSON(path) {
+  const res = await fetch(path, { cache: "no-store" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `${path} answered ${res.status}`);
+  return body;
+}
+
+const INSTANCE_COLOR = { running: "var(--idle)", starting: "var(--pending)", failed: "var(--error)" };
+let instances = [];
+
+function selected() {
+  const wanted = decodeURIComponent(location.hash.slice(1));
+  return instances.find((i) => i.name === wanted) || instances[0];
+}
+
+function renderTabs() {
+  const current = selected();
+  const tabs = instances.map((inst) => {
+    const tab = el("button");
+    tab.type = "button";
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-selected", String(inst === current));
+    tab.title = inst.last_error || inst.state;
+
+    const dot = el("span", undefined, "dot");
+    dot.style.setProperty("--c", INSTANCE_COLOR[inst.state] || "var(--muted)");
+    tab.append(dot, el("span", inst.name));
+    if (inst.waiting !== undefined) {
+      tab.append(el("span", `${inst.waiting} waiting`, "count"));
+    }
+
+    tab.addEventListener("click", () => {
+      location.hash = encodeURIComponent(inst.name);
+    });
+    return tab;
+  });
+  $("tabs").replaceChildren(...tabs);
+  // One instance needs no tabs.
+  $("tabs").hidden = instances.length < 2;
+}
+
+function showProblem(inst) {
+  const banner = $("banner");
+  banner.hidden = true;
+  if (inst.state === "failed") {
+    banner.textContent = `${inst.name} failed and restarts automatically (${inst.restarts} so far): ${inst.last_error}`;
+    banner.hidden = false;
+  } else if (inst.state === "starting" && inst.last_error) {
+    banner.textContent = `${inst.name} is restarting after an error: ${inst.last_error}`;
+    banner.hidden = false;
+  }
+}
+
+async function refresh() {
+  try {
+    const list = await getJSON("/api/v1/instances");
+    instances = list.instances || [];
+    version = list.version;
+    renderTabs();
+
+    const inst = selected();
+    if (!inst) throw new Error("no instances configured");
+    showProblem(inst);
+
+    $("content").hidden = inst.runners === undefined;
+    if (inst.runners === undefined) {
+      $("title").textContent = inst.name;
+      const what = inst.state === "failed" ? "is not running" : "is starting…";
+      $("subtitle").textContent = `Scale set ${inst.scale_set} on ${inst.url} ${what}`;
+    } else {
+      const base = `/api/v1/instances/${encodeURIComponent(inst.name)}`;
+      const [status, runners, events] = await Promise.all([
+        getJSON(`${base}/status`),
+        getJSON(`${base}/runners`),
+        getJSON(`${base}/events?limit=40`),
+      ]);
+      renderStatus(status);
+      renderRunners(runners || []);
+      renderEvents(events || []);
+    }
+    lastSuccess = Date.now();
+  } catch (err) {
+    $("banner").textContent = `Can't load the scaler status: ${err.message}. Retrying every 5 seconds.`;
+    $("banner").hidden = false;
+  }
+  updateFreshness();
+}
+
+window.addEventListener("hashchange", refresh);
+
+function updateFreshness() {
+  const f = $("freshness");
+  if (!lastSuccess) {
+    f.textContent = "Connecting…";
+    f.classList.add("stale");
+    return;
+  }
+  const age = Math.round((Date.now() - lastSuccess) / 1000);
+  f.textContent = version ? `Updated ${age}s ago, version ${version}` : `Updated ${age}s ago`;
+  f.classList.toggle("stale", age > 15);
+}
+
+refresh();
+setInterval(refresh, REFRESH_MS);
+setInterval(updateFreshness, 1000);
+</script>
+</body>
+</html>
