@@ -71,33 +71,36 @@ header p { margin: 0; color: var(--muted); }
 }
 #freshness.stale::before { background: var(--error); }
 
-nav.tabs {
+.picker {
   display: flex;
-  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
   margin-bottom: 24px;
+  padding-bottom: 16px;
   border-bottom: 1px solid var(--line);
-  overflow-x: auto;
 }
-nav.tabs button {
+.picker label { color: var(--muted); }
+.picker .choice {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
-  border: 0;
-  border-bottom: 3px solid transparent;
-  margin-bottom: -1px;
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  font-weight: 500;
-  white-space: nowrap;
-  cursor: pointer;
+  flex: 0 1 22rem;
+  min-width: 0;
 }
-nav.tabs button:hover { color: var(--ink); }
-nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
-nav.tabs button:focus-visible { outline: 2px solid var(--busy); outline-offset: -2px; }
-nav.tabs .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
-nav.tabs .count { color: var(--muted); font-weight: 400; }
+.picker select {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+.picker select:focus-visible { outline: 2px solid var(--busy); outline-offset: 1px; }
+.picker .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+.picker .alerts { color: var(--error); font-weight: 500; }
 #subtitle { margin: 4px 0 0; color: var(--muted); }
 
 #banner {
@@ -106,7 +109,7 @@ nav.tabs .count { color: var(--muted); font-weight: 400; }
   border-left: 4px solid var(--error);
   background: var(--slot-empty);
 }
-#banner[hidden], nav.tabs[hidden], #content[hidden] { display: none; }
+#banner[hidden], .picker[hidden], #content[hidden] { display: none; }
 
 /* The fleet: one slot per possible runner, up to max runners. */
 .fleet { margin-top: 36px; }
@@ -130,6 +133,7 @@ nav.tabs .count { color: var(--muted); font-weight: 400; }
 .slot { border-radius: 2px; background: var(--slot-empty); }
 .slot.busy { background: var(--busy); }
 .slot.idle { background: var(--idle); }
+.slot.cleaning { background: var(--muted); opacity: 0.45; }
 .slot.pending {
   background: repeating-linear-gradient(135deg, var(--pending) 0 6px, transparent 6px 12px);
   outline: 2px solid var(--pending);
@@ -150,6 +154,7 @@ nav.tabs .count { color: var(--muted); font-weight: 400; }
   margin-top: 14px;
   color: var(--muted);
 }
+.legend span[hidden] { display: none; }
 .legend span::before {
   content: "";
   display: inline-block;
@@ -208,7 +213,14 @@ section + section { margin-top: 40px; }
 </head>
 <body>
 <main>
-  <nav class="tabs" id="tabs" role="tablist" aria-label="Instances"></nav>
+  <div class="picker" id="picker" hidden>
+    <label for="instance">Instance</label>
+    <span class="choice">
+      <select id="instance"></select>
+      <span class="dot" id="instance-dot" aria-hidden="true"></span>
+    </span>
+    <span class="alerts" id="alerts"></span>
+  </div>
 
   <header>
     <div>
@@ -233,6 +245,7 @@ section + section { margin-top: 40px; }
       <span style="--c: var(--busy)" id="legend-busy">Busy</span>
       <span style="--c: var(--idle)" id="legend-idle">Idle</span>
       <span style="--c: var(--pending)" id="legend-pending">Starting</span>
+      <span style="--c: var(--muted)" id="legend-cleaning" hidden>Cleaning</span>
       <span style="--c: var(--ink)" id="legend-target">Target</span>
     </div>
   </section>
@@ -274,8 +287,13 @@ section + section { margin-top: 40px; }
 const REFRESH_MS = 5000;
 const $ = (id) => document.getElementById(id);
 
-const STATE_LABEL = { busy: "Busy", idle: "Idle", pending: "Starting" };
-const STATE_COLOR = { busy: "var(--busy)", idle: "var(--idle)", pending: "var(--pending)" };
+const STATE_LABEL = { busy: "Busy", idle: "Idle", pending: "Starting", cleaning: "Cleaning" };
+const STATE_COLOR = {
+  busy: "var(--busy)",
+  idle: "var(--idle)",
+  pending: "var(--pending)",
+  cleaning: "var(--muted)",
+};
 const EVENT_LABEL = {
   registered: "Runner registered",
   deregistered: "Runner removed from GitHub",
@@ -335,6 +353,9 @@ function renderStatus(st) {
   $("legend-busy").textContent = `Busy ${r.busy}`;
   $("legend-idle").textContent = `Idle ${r.idle}`;
   $("legend-pending").textContent = `Starting ${r.pending}`;
+  // Only with reuse.
+  $("legend-cleaning").textContent = `Cleaning ${r.cleaning || 0}`;
+  $("legend-cleaning").hidden = !r.cleaning;
   $("legend-target").textContent = `Target ${r.target}`;
 
   const slots = $("slots");
@@ -343,6 +364,7 @@ function renderStatus(st) {
     ...Array(r.busy).fill("busy"),
     ...Array(r.idle).fill("idle"),
     ...Array(r.pending).fill("pending"),
+    ...Array(r.cleaning || 0).fill("cleaning"),
   ];
   const cells = [];
   for (let i = 0; i < Math.max(r.max, fill.length); i++) {
@@ -427,30 +449,37 @@ function selected() {
   return instances.find((i) => i.name === wanted) || instances[0];
 }
 
-function renderTabs() {
+function optionLabel(inst) {
+  if (inst.state !== "running") return `${inst.name} (${inst.state})`;
+  return `${inst.name}, ${inst.waiting} waiting`;
+}
+
+function renderPicker() {
+  const select = $("instance");
   const current = selected();
-  const tabs = instances.map((inst) => {
-    const tab = el("button");
-    tab.type = "button";
-    tab.setAttribute("role", "tab");
-    tab.setAttribute("aria-selected", String(inst === current));
-    tab.title = inst.last_error || inst.state;
+  if (!current) return;
 
-    const dot = el("span", undefined, "dot");
-    dot.style.setProperty("--c", INSTANCE_COLOR[inst.state] || "var(--muted)");
-    tab.append(dot, el("span", inst.name));
-    if (inst.waiting !== undefined) {
-      tab.append(el("span", `${inst.waiting} waiting`, "count"));
-    }
-
-    tab.addEventListener("click", () => {
-      location.hash = encodeURIComponent(inst.name);
+  // Rebuild only when the list changes, so an open menu is not reset.
+  const names = instances.map((inst) => inst.name).join("\n");
+  if (select.dataset.names !== names) {
+    select.replaceChildren(...instances.map((inst) => {
+      const option = el("option", optionLabel(inst));
+      option.value = inst.name;
+      return option;
+    }));
+    select.dataset.names = names;
+  } else {
+    instances.forEach((inst, i) => {
+      select.options[i].textContent = optionLabel(inst);
     });
-    return tab;
-  });
-  $("tabs").replaceChildren(...tabs);
-  // One instance needs no tabs.
-  $("tabs").hidden = instances.length < 2;
+  }
+  select.value = current.name;
+
+  $("instance-dot").style.setProperty("--c", INSTANCE_COLOR[current.state] || "var(--muted)");
+  const failed = instances.filter((inst) => inst.state === "failed").length;
+  $("alerts").textContent = failed ? `${failed} failed` : "";
+  // One instance needs no picker.
+  $("picker").hidden = instances.length < 2;
 }
 
 function showProblem(inst) {
@@ -470,7 +499,7 @@ async function refresh() {
     const list = await getJSON("/api/v1/instances");
     instances = list.instances || [];
     version = list.version;
-    renderTabs();
+    renderPicker();
 
     const inst = selected();
     if (!inst) throw new Error("no instances configured");
@@ -501,6 +530,9 @@ async function refresh() {
 }
 
 window.addEventListener("hashchange", refresh);
+$("instance").addEventListener("change", (event) => {
+  location.hash = encodeURIComponent(event.target.value);
+});
 
 function updateFreshness() {
   const f = $("freshness");
